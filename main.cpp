@@ -43,10 +43,17 @@ struct ListNode
 // @param num_ops
 //   Number of operations to perform.
 //
+struct hdr_histogram *histogram;
+unsigned long long start, end;
 static auto traverse_list(ListNode *head, size_t num_ops)
 {
-	while (num_ops--)
+
+	while (num_ops--){
+		// start = rdtscp();
 		head = head->next;
+		// end = rdtscp();
+		// hdr_record_value(histogram, (int64_t)(end - start));
+	}
 	return head;
 }
 
@@ -66,21 +73,29 @@ static void memory_latency_list(unsigned size)
 
 	// Allocate a contiguous list of nodes for an iteration
 	std::vector<ListNode> list(num_nodes);
-	// Make a cycle of the list nodes
-	for (size_t i = 0; i < list.size() - 1; i++)
-		list[i].next = &list[i + 1];
-	list[list.size() - 1].next = &list[0];
+	// Make a complex link list
+	for (size_t i = 0; i < list.size() / 2; i++)
+	{
+		list[i].next = &list[list.size() - 1 - i];
+	}
+	for (size_t i = list.size() / 2 + 1; i < list.size(); i++)
+	{
+		list[i].next = &list[list.size() - i];
+	}
+	list[list.size() / 2].next = &list[0];
+	// original link list
+	// for (size_t i = 0; i < list.size() - 1; i++)
+	// 	list[i].next = &list[i + 1];
+	// list[list.size() - 1].next = &list[0];
 
 	unsigned long long start, end;
-	struct hdr_histogram *histogram;
-	hdr_init(1, INT64_C(100000), 3, &histogram);
 
-	const auto num_ops = 10000;
+	const auto num_ops = 1_M;
 	for (int i = 0; i < 100; i++)
 	{
-		start = rdtsc();
+		start = rdtscp();
 		auto last_node = traverse_list(&list[0], num_ops);
-		end = rdtsc();
+		end = rdtscp();
 		asm volatile("" : "+m,r"(last_node) : : "memory");
 		// std::cout << "Memory latency: " << ticks_to_ns(end - start)/num_ops << " ns" << std::endl;
 		hdr_record_value(histogram, (int64_t)(ticks_to_ns(end - start) / num_ops));
@@ -103,6 +118,8 @@ int main(int argc, char *argv[])
 	CPU_ZERO(&mask);
 	CPU_SET(1, &mask);
 	sched_setaffinity(0, sizeof(mask), &mask);
+	
+	hdr_init(1, INT64_C(100000), 3, &histogram);
 
 	memory_latency_list(atoi(argv[1]));
 
